@@ -1,82 +1,12 @@
-USING: accessors arrays assocs classes classes.tuple combinators
-combinators.short-circuit fry sequences.interleaved literals hashtables kernel
-locals math sequences sequences.deep vectors ;
+USING: 21-ng 21-ng.private accessors arrays assocs classes
+classes.tuple combinators combinators.short-circuit fry
+hashtables kernel literals locals math sequences sequences.deep
+sequences.interleaved vectors ;
 IN: 21-ng.game
 
-CONSTANT: addables { 1 2 }
-CONSTANT: known-inputs { "1" "2" "q" f }
-CONSTANT: default-limits { { 3 4 } { 4 3 } }
-CONSTANT: default-game-over 21
-
 <PRIVATE
-SINGLETONS: play announce skip ;
-MIXIN: next,
-INSTANCE: play next,
-INSTANCE: announce next,
-INSTANCE: skip next,
-
-MIXIN: player
-INSTANCE: f player
-PRIVATE>
-
-TUPLE: player-data
-    { who     player initial: f read-only }
-    { player# fixnum initial: 0 read-only }
-    { turn#   fixnum initial: 1 }
-    ! pointer slots
-    { turns   vector initial: V{ } read-only }
-    { limits  hashtable initial: H{ { 1 f } { 2 f } } read-only } ;
-
-TUPLE: 21-game-state
-    { playing-to  integer initial: $[ default-game-over ] read-only  }
-    { current     integer initial: 0 }
-    { next-time   next,   initial: play }
-    ! pointer slot
-    { players     hashtable initial: H{ } read-only } ;
-
-PREDICATE: playing-game < 21-game-state
-    next-time>> play? ;
-
-PREDICATE: announcing-game < 21-game-state
-    next-time>> announce? ;
-
-PREDICATE: skipping-game < 21-game-state
-    next-time>> skip? ;
-
-PREDICATE: played-game < 21-game-state
-    [ current>> ] [ playing-to>> ] bi >= ;
-
-PREDICATE: addable < fixnum
-    addables member? ;
-
-PREDICATE: known-input < object
-    known-inputs member? ;
-
-PREDICATE: real-assoc < assoc
-    [ f ] [ [ pair? ] all? ] if-empty ;
-
-<PRIVATE
-: (unique-clone) ( what -- new )
-    [ class-of ] keep
-    tuple-slots [ dup hashtable? [ >alist ] when ] map
-    [ clone ] deep-map [ clone ] map
-    [ dup real-assoc? [ >hashtable ] when ] map
-    swap prefix >tuple ;
-
-M: 21-game-state clone
-    (unique-clone) ;
-
-M: player-data clone
-    (unique-clone) ;
-
-: max-turns-needed ( n -- x )
-    2 /i 1 + ;
-
 : >index-hashtable ( array -- hash )
     addables swap zip >hashtable ;
-
-: ?rest ( seq -- seq/f )
-    [ f ] [ rest ] if-empty ;
 
 : play-next-time     ( game -- game )     skip >>next-time ;
 : announce-next-time ( game -- game ) announce >>next-time ;
@@ -101,14 +31,21 @@ M: skipping-game   set-next-time ;
 : dec-player-limits ( played player -- )
     limits>> [ dup [ 1 - ] when ] change-at ;
 
+: check-limits ( played player -- ? )
+    limits>> at 0 > ;
+
+: get-player-data ( game who -- player-data )
+    [ players>> ] dip of ;
+
 : (inc-score) ( game who add -- )
-    dup addable? [
+    { [ pick playing-game? ] [ addable? ] } 1&& [
         [| game who add |
-            add game players>> who of
-            ! change the player data here
-            [ add-player-turn ]
-            [ dec-player-limits ]
-            [ nip inc-turn# ] 2tri
+            add game who get-player-data 2dup check-limits [
+                ! change the player data here
+                [ add-player-turn ]
+                [ dec-player-limits ]
+                [ nip inc-turn# ] 2tri
+            ] [ 2drop ] if
         ] [
             ! change the game data here
             nip inc-current
@@ -132,7 +69,7 @@ PRIVATE>
     ! [ max-turns-needed ] dip <repetition> ;
 
 : <easy-21-game-state> ( playing-to players: assoc -- game-state )
-    [ [ default-game-over ] unless* ] [ [| obj p# |
+    [ default-game-over or ] [ [| obj p# |
         obj first2 :> ( who limits )
         who dup p# 1 + limits <player-data> 2array
     ] map-index >hashtable ] bi* <21-game-state> ;
@@ -142,11 +79,26 @@ PRIVATE>
 
 GENERIC: take-turn ( game who: player -- add )
 
+<PRIVATE
 : do-player-turn ( game who -- game+ )
     2dup [ clone ] dip take-turn inc-score set-next-time ;
+PRIVATE>
 
-: do-game-iteration ( game-state who -- game-state )
+! real iterators
+
+: do-game-iteration ( game-state who -- game-state+ )
     over skipping-game? [ drop ] [ do-player-turn ] if ;
 
-: 21-loop ( game-state game-loop -- game-state )
+: rec-game-iteration ( game-state game-loop --  game-state+ game-loop-1 )
+    { [ over skipping-game? ] [ empty? ] } 1|| [ drop f ] [
+        [ first do-player-turn drop ] [ rest ] 2bi
+    ] if ;
+
+: rec-21-once ( game-state game-loop -- game-state+ game-loop-1 )
+    [ f ] [ rec-game-iteration ] if-empty ; ! then you call rec-21-once again
+
+: 21-loop ( game-state game-loop -- game-state+ )
     [ do-game-iteration ] each ;
+
+: rec-21-loop ( game-state game-loop -- game-state+ )
+    [ ] [ rec-game-iteration rec-21-loop ] if-empty ;
