@@ -1,4 +1,4 @@
-USING: accessors arrays assocs classes classes.tuple hashtables
+USING: accessors arrays assocs classes classes.tuple combinators.short-circuit hashtables
 kernel literals math sequences sequences.deep strings vectors roles ;
 IN: 21-ng
 
@@ -12,8 +12,8 @@ INSTANCE: play next,
 INSTANCE: announce next,
 INSTANCE: skip next,
 
-MIXIN: player
-INSTANCE: f player
+ROLE: player { name string initial: "nobody" read-only } ;
+ROLE-TUPLE: default-player < player ;
 
 TUPLE: player-data
     { who     player initial: T{ default-player } read-only }
@@ -40,7 +40,7 @@ PREDICATE: skipping-game < 21-game-state
     next-time>> skip? ;
 
 PREDICATE: played-game < 21-game-state
-    [ current>> ] [ playing-to>> ] bi >= ;
+    { [ [ current>> ] [ playing-to>> ] bi >= ] [ playing-game? ] } 1&& ;
 
 PREDICATE: addable < fixnum
     addables member? ;

@@ -1,7 +1,11 @@
-USING: 21-ng 21-ng.game kernel roles io ;
+USING: 21-ng 21-ng.game accessors formatting kernel roles io ;
 IN: 21-ng.bot
 
-SINGLETON: computer 
-INSTANCE: computer player
+ROLE-TUPLE: computer < player ;
 
-M: computer take-turn drop dup announcing-game? [ "computer wins!" print ] [ drop 2 ] if ;
+M: computer take-turn
+    swap announcing-game? [
+        name>> "%s wins!\n" printf skip
+    ] [
+        drop 2
+    ] if ;
